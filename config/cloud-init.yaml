@@ -4,20 +4,13 @@ users:
     groups: docker
     shell: /bin/bash
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
-
 package_update: true
-package_upgrade: true
-
 packages:
   - docker.io
   - docker-compose
-
 runcmd:
-  # Enable Docker
   - systemctl start docker
   - systemctl enable docker
-  
-  # Configure Firewall (UFW) as per the guide
   - ufw allow 22/tcp
   - ufw allow 80/tcp
   - ufw allow 443/tcp
