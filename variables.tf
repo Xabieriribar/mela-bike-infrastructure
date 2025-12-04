@@ -1,6 +1,6 @@
 variable "hcloud_token" {
 	description = "The API token for Hetzner Cloud"
-	tpye = string
+	type = string
 	sensitive = true
 }
 
