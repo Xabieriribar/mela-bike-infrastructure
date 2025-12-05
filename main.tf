@@ -66,3 +66,17 @@ resource "hcloud_server" "odoo_app" {
   # Wait for network to be ready before creating server
   depends_on = [hcloud_network_subnet.odoo_subnet]
 }
+
+resource "hcloud_volume" "odoo_data" {
+	name = "odoo-data-volume"
+	size = 10
+	location = "fsn1"
+	format = "ext4"
+	automount = false
+}
+
+resource "hcloud_volume_attachment" "main" {
+	volume_id = hcloud_volume.odoo_data.id
+	server_id = hcloud_server.odoo_app.id
+	automount = false
+}

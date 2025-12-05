@@ -15,3 +15,6 @@ runcmd:
   - ufw allow 80/tcp
   - ufw allow 443/tcp
   - ufw --force enable
+  - mkdir -p /data
+  - mount -o discard,defaults /dev/disk/by-id/scsi-0HC_Volume_${volume_id} /data
+  - echo "/dev/disk/by-id/scsi-0HC_Volume_${volume_id} /data ext4 discard,defaults,nofail 0 2" >> /etc/fstab
