@@ -45,6 +45,20 @@ resource "hcloud_firewall" "odoo_base" {
     port      = "443" # Corrected from 433
     source_ips = ["0.0.0.0/0"]
   }
+# Traccar GPS Devices (SinoTrack ST915 - H02 Protocol)
+  rule {
+    direction = "in"
+    protocol  = "tcp"
+    port      = "5013"
+    source_ips = ["0.0.0.0/0"]
+  }
+
+  rule {
+    direction = "in"
+    protocol  = "udp"
+    port      = "5013"
+    source_ips = ["0.0.0.0/0"]
+  }
 }
 
 # --- 4. COMPUTE INSTANCE ---
