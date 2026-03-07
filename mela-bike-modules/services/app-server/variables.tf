@@ -1,33 +1,41 @@
 variable "server_name" {
-  type = string
+  description = "The server name"
+  type        = string
 }
 
 variable "server_type" {
-  type = string
+  description = "The Hetzner server type"
+  type        = string
 }
 
 variable "image" {
-  type = string
+  description = "The OS image"
+  type        = string
 }
 
 variable "location" {
-  type = string
+  description = "The Hetzner location"
+  type        = string
 }
 
 variable "network_id" {
-  type = string
+  description = "The network ID to attach the server to"
+  type        = string
 }
 
 variable "firewall_id" {
-  type = string
+  description = "The firewall ID to attach to the server"
+  type        = string
 }
 
 variable "ssh_keys" {
-  type    = list(string)
-  default = []
+  description = "SSH keys to install on the server"
+  type        = list(string)
+  default     = []
 }
 
 variable "user_data" {
-  type    = string
-  default = null
+  description = "Optional cloud-init user_data"
+  type        = string
+  default     = null
 }

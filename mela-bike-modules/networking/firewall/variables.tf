@@ -1,10 +1,13 @@
-variable "name"  {
-    type = string
+variable "name" {
+  description = "The name of the firewall"
+  type        = string
 }
 
 variable "inbound_rules" {
-    type = list(object ({
-        protocol    = string
-        port        = string
-    }))
+  description = "Inbound firewall rules"
+  type = list(object({
+    protocol   = string
+    port       = string
+    source_ips = list(string)
+  }))
 }
