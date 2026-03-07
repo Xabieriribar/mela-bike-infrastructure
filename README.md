@@ -1,108 +1,72 @@
-# mela-bike-infrastructure
+Mela Bike Infrastructure
+Project Overview
 
-## Project Overview
+This repository contains the Terraform configuration files used to provision and manage the "Mela Bike" infrastructure on Hetzner Cloud. The setup is specifically tailored to host an Odoo production application alongside a Traccar GPS tracking service.
+Architecture & Features
 
-This repository contains infrastructure configuration files for a project named "mela-bike-infrastructure". While a detailed description is currently unavailable, it appears to manage infrastructure, likely using Terraform. This README provides a basic overview of the project, setup instructions, and contribution guidelines to get you started.
+The automated Infrastructure as Code (IaC) configuration handles the deployment of the following resources:
 
-## Key Features & Benefits
+    Compute Instance: Provisions a cost-efficient ARM64 server (cax21) running Ubuntu 22.04 in the Falkenstein (fsn1) data center.
 
-As the project description is limited, specific features and benefits are currently unknown. Based on the file structure, the following can be inferred:
+    Persistent Storage: Attaches a dedicated 10GB ext4 formatted block volume to the server to securely store application data.
 
-*   **Infrastructure as Code (IaC):** Leveraging Terraform to define and manage infrastructure.
-*   **Cloud Deployment:** Likely designed for deployment on a cloud provider based on the Terraform configuration.
-*   **Automated Infrastructure Provisioning:** Aiming to automate the creation and management of necessary resources.
+    Networking: Creates an isolated private network (10.0.0.0/16) and subnet (10.0.1.0/24) in the eu-central zone.
 
-## Prerequisites & Dependencies
+    Security & Firewalls: Configures a Hetzner Cloud firewall that restricts inbound traffic to essential services only:
 
-To use this infrastructure configuration, you will need the following:
+        Port 22 (TCP): SSH Access.
 
-*   **Terraform:** Version 0.12 or higher (check compatibility based on `.terraform.lock.hcl`). Installation instructions can be found at [https://www.terraform.io/downloads.html](https://www.terraform.io/downloads.html).
-*   **Cloud Provider Account:** An account with a cloud provider (e.g., AWS, Azure, GCP) to deploy the infrastructure to.  Appropriate credentials configured for Terraform access.
-*   **Cloud Provider CLI (Optional):** While not strictly necessary, the cloud provider's command-line interface (CLI) can be helpful for debugging and interacting with the infrastructure.
-*   **Basic understanding of Infrastructure as Code and Terraform.**
+        Ports 80 & 443 (TCP): HTTP/HTTPS traffic for Odoo and Traefik.
 
-## Installation & Setup Instructions
+        Port 5013 (TCP/UDP): Ingestion for Traccar GPS Devices (specifically SinoTrack ST915 using the H02 Protocol).
 
-Follow these steps to set up and deploy the infrastructure:
+    Automated Bootstrapping: Uses a cloud-init.yaml configuration to automatically configure the system on the first boot. This process:
 
-1.  **Clone the Repository:**
-    ```bash
-    git clone <repository_url>
-    cd mela-bike-infrastructure
-    ```
+        Creates a passwordless odoo user with sudo privileges and adds them to the docker group.
 
-2.  **Initialize Terraform:**
-    ```bash
-    terraform init
-    ```
+        Installs and enables docker.io and docker-compose.
 
-3.  **Configure Variables:**
-    *   Examine the `variables.tf` file to understand the required variables.
-    *   Provide values for the variables. You can do this in several ways:
-        *   Create a `terraform.tfvars` file in the root directory.
-        *   Set environment variables.
-        *   Pass values on the command line using `-var`.
+        Enables and configures the local Uncomplicated Firewall (UFW) to permit ports 22, 80, and 443.
 
-    Example `terraform.tfvars`:
-    ```terraform
-    # Example values, replace with your actual values
-    region = "us-east-1"
-    instance_type = "t2.micro"
-    ```
+        Automatically formats and mounts the external Hetzner volume to the /data directory.
 
-4.  **Plan the Infrastructure:**
-    ```bash
-    terraform plan
-    ```
-    This command shows the changes Terraform will make to your infrastructure. Review the output carefully.
+Prerequisites
 
-5.  **Apply the Configuration:**
-    ```bash
+To deploy this infrastructure, you will need the following dependencies:
+
+    Terraform: Ensure Terraform is installed on your local machine.
+
+    Hetzner Cloud Account: An active Hetzner Cloud API token to authorize infrastructure creation.
+
+    SSH Keys: An SSH public key pair to allow secure access into the newly created server.
+
+Configuration & Variables
+
+Before executing Terraform, you must provide values for the variables defined in variables.tf. It is recommended to create a terraform.tfvars file (this file is excluded from source control by the .gitignore policy).
+
+Required variables include:
+
+    hcloud_token: Your sensitive Hetzner Cloud API token.
+
+    user_keys: A map containing usernames and their corresponding SSH public keys, which will be attached dynamically to the server instance.
+
+Deployment Instructions
+
+    Initialize Terraform: Download the required provider (hetznercloud/hcloud ~> 1.45) and set up the working directory.
+    Bash
+
+terraform init
+
+Preview Changes: Review the infrastructure additions and changes before they are provisioned.
+Bash
+
+terraform plan
+
+Apply Configuration: Deploy the infrastructure.
+Bash
+
     terraform apply
-    ```
-    This command creates or modifies the infrastructure as defined in the configuration files. You will be prompted to confirm the changes.
 
-## Usage Examples & API Documentation
+Outputs
 
-Since the project lacks a description, specific usage examples or API documentation cannot be provided.  Refer to the cloud provider's documentation for specific resource usage once deployed.  The `outputs.tf` file may provide insight into useful outputs once the infrastructure is running.
-
-## Configuration Options
-
-The configuration options are defined in the `variables.tf` file.  These variables allow you to customize the infrastructure to your specific needs.  Common configuration options might include:
-
-*   **Region:** The cloud region to deploy the infrastructure to.
-*   **Instance Type:** The type of virtual machine instances to use.
-*   **Network Configuration:** CIDR blocks and subnet settings.
-*   **Security Group Rules:** Rules for controlling network access.
-
-Refer to `variables.tf` for a complete list and descriptions of available configuration options.
-
-## Contributing Guidelines
-
-We welcome contributions to this project! To contribute, please follow these guidelines:
-
-1.  **Fork the Repository:** Create your own fork of the repository.
-2.  **Create a Branch:** Create a new branch for your changes.
-    ```bash
-    git checkout -b feature/your-feature-name
-    ```
-3.  **Make Changes:** Implement your changes and ensure they are well-tested.
-4.  **Commit Changes:** Commit your changes with clear and concise commit messages.
-    ```bash
-    git commit -m "Add your feature/fix"
-    ```
-5.  **Push to Fork:** Push your changes to your forked repository.
-    ```bash
-    git push origin feature/your-feature-name
-    ```
-6.  **Create a Pull Request:** Submit a pull request to the main repository.
-
-Please ensure your code adheres to Terraform best practices and includes appropriate documentation.
-
-## License Information
-
-License information is not specified. Please contact the repository owner for more information. If no license is provided, all rights are reserved.
-
-## Acknowledgments
-
-(Currently None)
+Upon successful completion of the deployment, Terraform will print the public IPv4 address of the newly provisioned Odoo server to your console (server_ip). You can use this IP to SSH into the machine or configure your DNS records.
