@@ -1,0 +1,325 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - jq
+  - openssl
+  - ufw
+  - fail2ban
+  - unattended-upgrades
+  - auditd
+
+write_files:
+  - path: /etc/fail2ban/jail.d/sshd.local
+    permissions: '0644'
+    content: |
+      [sshd]
+      enabled = true
+      port = 22
+      backend = systemd
+      logpath = %(sshd_log)s
+      maxretry = 5
+      findtime = 10m
+      bantime = 24h
+
+  - path: /etc/apt/apt.conf.d/20auto-upgrades
+    permissions: '0644'
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+
+  - path: /etc/docker/daemon.json
+    permissions: '0644'Agg
+    content: |
+      {
+        "data-root": "/mnt/mela-bike-data/docker",
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        },
+        "live-restore": true
+      }
+
+  - path: /opt/mela-bike/traefik/dynamic.yml
+    permissions: '0644'
+    content: |
+      http:
+        middlewares:
+          security-headers:
+            headers:
+              contentTypeNosniff: true
+              browserXssFilter: true
+              referrerPolicy: "strict-origin-when-cross-origin"
+              permissionsPolicy: "geolocation=(), microphone=(), camera=()"
+              stsSeconds: 31536000
+              stsIncludeSubdomains: true
+              stsPreload: true
+
+  - path: /opt/mela-bike/compose.yaml
+    permissions: '0644'
+    content: |
+      name: mela-bike
+
+      networks:
+        frontend:
+          name: mela-bike-frontend
+        backend:
+          name: mela-bike-backend
+          internal: true
+
+      volumes:
+        letsencrypt:
+        odoo_data:
+        postgres_data:
+        traccar_data:
+
+      services:
+        traefik:
+          image: traefik:v3.3
+          restart: unless-stopped
+          read_only: true
+          security_opt:
+            - no-new-privileges:true
+          command:
+            - --global.sendanonymoususage=false
+            - --api.dashboard=false
+            - --providers.docker=true
+            - --providers.docker.exposedbydefault=false
+            - --providers.docker.network=mela-bike-frontend
+            - --providers.file.filename=/etc/traefik/dynamic.yml
+            - --entrypoints.web.address=:80
+            - --entrypoints.web.http.redirections.entrypoint.to=websecure
+            - --entrypoints.web.http.redirections.entrypoint.scheme=https
+            - --entrypoints.websecure.address=:443
+            - --certificatesresolvers.letsencrypt.acme.tlschallenge=true
+            - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}
+            - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+          ports:
+            - "80:80"
+            - "443:443"
+          volumes:
+            - /var/run/docker.sock:/var/run/docker.sock:ro
+            - letsencrypt:/letsencrypt
+            - /opt/mela-bike/traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
+          tmpfs:
+            - /tmp
+          networks:
+            - frontend
+
+        db:
+          image: postgres:15-alpine
+          restart: unless-stopped
+          networks:
+            - backend
+          security_opt:
+            - no-new-privileges:true
+          environment:
+            POSTGRES_DB: postgres
+            POSTGRES_USER: odoo
+            POSTGRES_PASSWORD: ${DB_PASSWORD}
+          healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 20s
+          volumes:
+            - postgres_data:/var/lib/postgresql/data
+
+        odoo:
+          image: odoo:17.0
+          restart: unless-stopped
+          depends_on:
+            db:
+              condition: service_healthy
+          networks:
+            - frontend
+            - backend
+          security_opt:
+            - no-new-privileges:true
+          environment:
+            HOST: db
+            PORT: 5432
+            USER: odoo
+            PASSWORD: ${DB_PASSWORD}
+          volumes:
+            - odoo_data:/var/lib/odoo
+            - /opt/mela-bike/odoo/odoo.conf:/etc/odoo/odoo.conf:ro
+          labels:
+            - traefik.enable=true
+            - traefik.docker.network=mela-bike-frontend
+            - traefik.http.routers.odoo.rule=Host(`${ODOO_DOMAIN}`)
+            - traefik.http.routers.odoo.entrypoints=websecure
+            - traefik.http.routers.odoo.tls.certresolver=letsencrypt
+            - traefik.http.routers.odoo.middlewares=security-headers@file
+            - traefik.http.services.odoo.loadbalancer.server.port=8069
+
+        traccar:
+          image: traccar/traccar:6.12.2-ubuntu
+          restart: unless-stopped
+          networks:
+            - frontend
+          security_opt:
+            - no-new-privileges:true
+          labels:
+            - traefik.enable=true
+            - traefik.docker.network=mela-bike-frontend
+            - traefik.http.routers.traccar.rule=Host(`${TRACCAR_DOMAIN}`)
+            - traefik.http.routers.traccar.entrypoints=websecure
+            - traefik.http.routers.traccar.tls.certresolver=letsencrypt
+            - traefik.http.routers.traccar.middlewares=security-headers@file
+            - traefik.http.services.traccar.loadbalancer.server.port=8082
+          ports:
+            - "5000-5150:5000-5150/tcp"
+            - "5000-5150:5000-5150/udp"
+          volumes:
+            - traccar_data:/opt/traccar/data
+
+  - path: /etc/systemd/system/mela-bike-stack.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Mela Bike Docker Compose stack
+      Requires=docker.service
+      After=docker.service network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      WorkingDirectory=/opt/mela-bike
+      ExecStart=/usr/bin/docker compose --env-file /opt/mela-bike/.env up -d
+      ExecStop=/usr/bin/docker compose --env-file /opt/mela-bike/.env down
+      TimeoutStartSec=0
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /usr/local/sbin/mela-bike-bootstrap.sh
+    permissions: '0750'
+    content: |
+      #!/usr/bin/env bash
+      set -Eeuo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+
+      install -m 0755 -d /etc/apt/keyrings
+
+      if [ ! -f /etc/apt/keyrings/docker.asc ]; then
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+        chmod a+r /etc/apt/keyrings/docker.asc
+      fi
+
+      . /etc/os-release
+      cat >/etc/apt/sources.list.d/docker.list <<EOF
+      deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable
+      EOF
+
+      apt-get remove -y docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc || true
+      apt-get update
+      apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+      systemctl stop docker.service docker.socket || true
+
+      HC_VOLUME=""
+      for _ in $(seq 1 30); do
+        HC_VOLUME=$(find /mnt -maxdepth 1 -mindepth 1 -type d -name 'HC_Volume_*' | head -n1 || true)
+        if [ -n "${HC_VOLUME}" ]; then
+          break
+        fi
+        sleep 2
+      done
+
+      if [ -z "${HC_VOLUME}" ]; then
+        echo "No auto-mounted Hetzner volume found under /mnt/HC_Volume_*" >&2
+        exit 1
+      fi
+
+      install -d -m 0755 /mnt/mela-bike-data
+      mountpoint -q /mnt/mela-bike-data || mount --bind "${HC_VOLUME}" /mnt/mela-bike-data
+      grep -qE '^[^#]+\s+/mnt/mela-bike-data\s+none\s+bind' /etc/fstab || echo "${HC_VOLUME} /mnt/mela-bike-data none bind,nofail 0 0" >> /etc/fstab
+
+      install -d -m 0755 /mnt/mela-bike-data/docker
+      install -d -m 0755 /opt/mela-bike /opt/mela-bike/odoo /opt/mela-bike/traefik
+
+      if [ ! -f /opt/mela-bike/.env ]; then
+        DB_PASSWORD=$(openssl rand -base64 36 | tr -d '\n')
+        ODOO_MASTER_PASSWORD=$(openssl rand -base64 36 | tr -d '\n')
+
+        cat >/opt/mela-bike/.env <<EOF
+      ACME_EMAIL=admin@example.com
+      ODOO_DOMAIN=erp.example.com
+      TRACCAR_DOMAIN=gps.example.com
+      DB_PASSWORD=${DB_PASSWORD}
+      ODOO_MASTER_PASSWORD=${ODOO_MASTER_PASSWORD}
+      TZ=UTC
+      EOF
+
+        chmod 600 /opt/mela-bike/.env
+
+        cat >/root/mela-bike-secrets.txt <<EOF
+      Generated on first boot.
+
+      Replace the placeholder domains and email in /opt/mela-bike/.env before going live.
+
+      DB_PASSWORD=${DB_PASSWORD}
+      ODOO_MASTER_PASSWORD=${ODOO_MASTER_PASSWORD}
+      EOF
+        chmod 600 /root/mela-bike-secrets.txt
+      fi
+
+      . /opt/mela-bike/.env
+
+      cat >/opt/mela-bike/odoo/odoo.conf <<EOF
+      [options]
+      admin_passwd = ${ODOO_MASTER_PASSWORD}
+      proxy_mode = True
+      data_dir = /var/lib/odoo
+      db_host = db
+      db_port = 5432
+      db_user = odoo
+      db_password = ${DB_PASSWORD}
+      max_cron_threads = 1
+      EOF
+      chmod 600 /opt/mela-bike/odoo/odoo.conf
+
+      systemctl daemon-reload
+
+      ufw --force reset
+      ufw default deny incoming
+      ufw default allow outgoing
+      ufw allow 22/tcp
+      ufw allow 80/tcp
+      ufw allow 443/tcp
+      ufw --force enable
+
+      systemctl enable auditd
+      systemctl start auditd
+      systemctl enable fail2ban
+      systemctl restart fail2ban
+      systemctl enable docker
+      systemctl start docker
+
+      docker compose -f /opt/mela-bike/compose.yaml --env-file /opt/mela-bike/.env config >/dev/null
+
+      if grep -q 'example.com' /opt/mela-bike/.env; then
+        cat >/root/mela-bike-next-step.txt <<EOF
+      Edit /opt/mela-bike/.env and replace:
+        - ACME_EMAIL
+        - ODOO_DOMAIN
+        - TRACCAR_DOMAIN
+
+      Then run:
+        systemctl enable --now mela-bike-stack
+      EOF
+      else
+        systemctl enable --now mela-bike-stack
+      fi
+
+runcmd:
+  - /usr/local/sbin/mela-bike-bootstrap.sh
