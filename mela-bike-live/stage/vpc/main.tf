@@ -1,5 +1,5 @@
 module "vpc" {
-  source = "../../../mela-bike-modules/networking/vpc"
+  source = "github.com/Xabieriribar/mela-bike-modules//networking/vpc?ref=v1.0.1"
 
   name             = var.network_name
   network_ip_range = var.network_ip_range

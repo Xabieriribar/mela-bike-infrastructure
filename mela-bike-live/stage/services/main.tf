@@ -37,14 +37,14 @@ locals {
 }
 
 module "firewall" {
-  source = "../../../mela-bike-modules/networking/firewall"
+  source = "github.com/Xabieriribar/mela-bike-modules//networking/firewall?ref=v1.0.1"
 
   name          = "${var.server_name}-firewall"
   inbound_rules = local.inbound_rules
 }
 
 module "app_server" {
-  source = "../../../mela-bike-modules/services/app-server"
+  source = "github.com/Xabieriribar/mela-bike-modules//services/app-server?ref=v1.0.1"
 
   server_name = var.server_name
   server_type = var.server_type
