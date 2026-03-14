@@ -89,6 +89,7 @@ write_files:
           container_name: traccar
           restart: unless-stopped
           ports:
+            - "8082:8082"
             - "5000-5150:5000-5150/tcp"
             - "5000-5150:5000-5150/udp"
           volumes:
@@ -96,13 +97,6 @@ write_files:
             - /opt/mela-bike/traccar/logs:/opt/traccar/logs
           security_opt:
             - no-new-privileges:true
-          labels:
-            - traefik.enable=true
-            - traefik.docker.network=mela-bike-proxy
-            - traefik.http.routers.traccar.entrypoints=web
-            - traefik.http.services.traccar.loadbalancer.server.port=8082
-          networks:
-            - proxy
 
       secrets:
         postgres_password:

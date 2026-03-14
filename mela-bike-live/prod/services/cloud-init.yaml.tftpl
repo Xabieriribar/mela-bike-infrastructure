@@ -89,7 +89,7 @@ write_files:
           container_name: traccar
           restart: unless-stopped
           ports:
-            - "8082:8082" 
+            - "8082:8082"
             - "5000-5150:5000-5150/tcp"
             - "5000-5150:5000-5150/udp"
           volumes:
