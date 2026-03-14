@@ -99,7 +99,6 @@ write_files:
           labels:
             - traefik.enable=true
             - traefik.docker.network=mela-bike-proxy
-            - traefik.http.routers.traccar.rule=Host(`${traccar_domain}`)
             - traefik.http.routers.traccar.entrypoints=web
             - traefik.http.services.traccar.loadbalancer.server.port=8082
           networks:
