@@ -3,7 +3,7 @@ data "terraform_remote_state" "vpc" {
 
   config = {
     bucket = "odoo-infra-production-state"
-    key    = "prod/services/terraform.tfstate"
+    key    = "stage/vpc/terraform.tfstate"
     region = "eu-central"
 
     endpoints = {
