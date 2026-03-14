@@ -44,6 +44,11 @@ locals {
       protocol   = "udp"
       port       = "5000-5150"
       source_ips = ["0.0.0.0/0", "::/0"]
+    },
+    {
+      protocol   = "tcp"
+      port       = "8082"
+      source_ips = ["0.0.0.0/0", "::/0"]
     }
   ]
 }
