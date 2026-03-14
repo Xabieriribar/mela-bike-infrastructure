@@ -13,16 +13,18 @@ write_files:
           container_name: traefik
           restart: unless-stopped
           command:
-            - --providers.docker=true
-            - --providers.docker.exposedbydefault=false
-            - --entrypoints.web.address=:80
-            - --entrypoints.websecure.address=:443
-            - --api.dashboard=false
+            - --entrypoints.web.http.redirections.entryPoint.to=websecure
+            - --entrypoints.web.http.redirections.entryPoint.scheme=https
+            - --certificatesresolvers.letsencrypt.acme.email=xabieriribarrevuelta@gmail.com
+            - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+            - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
+            - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
           ports:
             - "80:80"
             - "443:443"
           volumes:
             - /var/run/docker.sock:/var/run/docker.sock:ro
+            - /opt/mela-bike/traefik/letsencrypt:/letsencrypt
           security_opt:
             - no-new-privileges:true
           cap_drop:
@@ -78,7 +80,9 @@ write_files:
             - traefik.enable=true
             - traefik.docker.network=mela-bike-proxy
             - traefik.http.routers.odoo.rule=Host(`${odoo_domain}`)
-            - traefik.http.routers.odoo.entrypoints=web
+            - traefik.http.routers.odoo.entrypoints=websecure
+            - traefik.http.routers.odoo.tls=true
+            - traefik.http.routers.odoo.tls.certresolver=letsencrypt
             - traefik.http.services.odoo.loadbalancer.server.port=8069
           networks:
             - proxy
@@ -172,5 +176,9 @@ runcmd:
   - touch /opt/mela-bike/secrets/postgres_password.txt
   - chmod 600 /opt/mela-bike/secrets/postgres_password.txt
   - chmod 750 /opt/mela-bike/start-stack.sh
+  - install -d -m 0755 /opt/mela-bike/traefik
+  - install -d -m 0700 /opt/mela-bike/traefik/letsencrypt
+  - touch /opt/mela-bike/traefik/letsencrypt/acme.json
+  - chmod 600 /opt/mela-bike/traefik/letsencrypt/acme.json
 
 final_message: "Bootstrap complete. Add the DB password to /opt/mela-bike/secrets/postgres_password.txt, then run /opt/mela-bike/start-stack.sh"
