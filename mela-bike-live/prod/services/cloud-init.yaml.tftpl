@@ -13,16 +13,22 @@ write_files:
           container_name: traefik
           restart: unless-stopped
           command:
-            - --api.dashboard=true
             - --providers.docker=true
             - --providers.docker.exposedbydefault=false
             - --entrypoints.web.address=:80
             - --entrypoints.websecure.address=:443
+            - --api.dashboard=false
           ports:
             - "80:80"
             - "443:443"
           volumes:
             - /var/run/docker.sock:/var/run/docker.sock:ro
+          security_opt:
+            - no-new-privileges:true
+          cap_drop:
+            - ALL
+          cap_add:
+            - NET_BIND_SERVICE
           networks:
             - proxy
 
@@ -31,22 +37,30 @@ write_files:
           container_name: odoo-db
           restart: unless-stopped
           environment:
-            POSTGRES_DB: odoo
+            POSTGRES_DB: postgres
             POSTGRES_USER: odoo
             POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
           secrets:
             - postgres_password
           volumes:
             - postgres_data:/var/lib/postgresql/data
+          healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+          security_opt:
+            - no-new-privileges:true
           networks:
             - internal
 
         odoo:
-          image: odoo:18
+          image: odoo:18.0
           container_name: odoo
           restart: unless-stopped
           depends_on:
-            - db
+            db:
+              condition: service_healthy
           environment:
             HOST: db
             PORT: 5432
@@ -56,14 +70,40 @@ write_files:
             - postgres_password
           volumes:
             - odoo_data:/var/lib/odoo
+            - /opt/mela-bike/odoo/config:/etc/odoo:ro
+            - /opt/mela-bike/odoo:/mnt/odoo:ro
+          security_opt:
+            - no-new-privileges:true
           labels:
             - traefik.enable=true
+            - traefik.docker.network=mela-bike-proxy
             - traefik.http.routers.odoo.rule=Host(`${odoo_domain}`)
-            - traefik.http.routers.odoo.entrypoints=websecure
+            - traefik.http.routers.odoo.entrypoints=web
             - traefik.http.services.odoo.loadbalancer.server.port=8069
           networks:
             - proxy
             - internal
+
+        traccar:
+          image: traccar/traccar:6.12.2
+          container_name: traccar
+          restart: unless-stopped
+          ports:
+            - "5000-5150:5000-5150/tcp"
+            - "5000-5150:5000-5150/udp"
+          volumes:
+            - /opt/mela-bike/traccar/data:/opt/traccar/data
+            - /opt/mela-bike/traccar/logs:/opt/traccar/logs
+          security_opt:
+            - no-new-privileges:true
+          labels:
+            - traefik.enable=true
+            - traefik.docker.network=mela-bike-proxy
+            - traefik.http.routers.traccar.rule=Host(`${traccar_domain}`)
+            - traefik.http.routers.traccar.entrypoints=web
+            - traefik.http.services.traccar.loadbalancer.server.port=8082
+          networks:
+            - proxy
 
       secrets:
         postgres_password:
@@ -75,7 +115,45 @@ write_files:
 
       networks:
         proxy:
+          name: mela-bike-proxy
         internal:
+          name: mela-bike-internal
+          internal: true
+
+  - path: /opt/mela-bike/odoo/config/odoo.conf
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [options]
+      proxy_mode = True
+      list_db = False
+      data_dir = /var/lib/odoo
+      addons_path = /mnt/odoo/addons-local,/mnt/odoo/addons-enterprise,/usr/lib/python3/dist-packages/odoo/addons
+
+  - path: /opt/mela-bike/start-stack.sh
+    permissions: "0750"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      if [ ! -s /opt/mela-bike/secrets/postgres_password.txt ]; then
+        echo "ERROR: /opt/mela-bike/secrets/postgres_password.txt is missing or empty."
+        exit 1
+      fi
+
+      cd /opt/mela-bike
+      docker compose up -d
+
+  - path: /opt/mela-bike/README.txt
+    permissions: "0644"
+    owner: root:root
+    content: |
+      After first boot:
+      1. Put the PostgreSQL password into /opt/mela-bike/secrets/postgres_password.txt
+      2. Put custom Odoo modules in /opt/mela-bike/odoo/addons-local
+      3. Put Odoo Enterprise modules in /opt/mela-bike/odoo/addons-enterprise
+      4. Start the stack with: /opt/mela-bike/start-stack.sh
 
 runcmd:
   - apt-get update
@@ -88,9 +166,18 @@ runcmd:
   - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   - systemctl enable docker
   - systemctl start docker
-  - mkdir -p /opt/mela-bike/secrets
-  - chmod 700 /opt/mela-bike/secrets
+
+  - install -d -m 0755 /opt/mela-bike
+  - install -d -m 0700 /opt/mela-bike/secrets
+  - install -d -m 0755 /opt/mela-bike/odoo
+  - install -d -m 0755 /opt/mela-bike/odoo/config
+  - install -d -m 0755 /opt/mela-bike/odoo/addons-local
+  - install -d -m 0755 /opt/mela-bike/odoo/addons-enterprise
+  - install -d -m 0755 /opt/mela-bike/traccar
+  - install -d -m 0755 /opt/mela-bike/traccar/data
+  - install -d -m 0755 /opt/mela-bike/traccar/logs
   - touch /opt/mela-bike/secrets/postgres_password.txt
   - chmod 600 /opt/mela-bike/secrets/postgres_password.txt
+  - chmod 750 /opt/mela-bike/start-stack.sh
 
-final_message: "cloud-init bootstrap complete"
+final_message: "Bootstrap complete. Add the DB password to /opt/mela-bike/secrets/postgres_password.txt, then run /opt/mela-bike/start-stack.sh"
