@@ -7,7 +7,7 @@ variable "server_name" {
 variable "server_type" {
   description = "The server type for stage"
   type        = string
-  default     = "CPX22"
+  default     = "cpx22"
 }
 
 variable "image" {
@@ -31,4 +31,8 @@ variable "ssh_keys" {
 variable "ssh_source_ips" {
   description = "Allowed source IPs for SSH"
   type        = list(string)
+}
+variable "odoo_domain" {
+  description = "Public domain for the Odoo instance"
+  type        = string
 }

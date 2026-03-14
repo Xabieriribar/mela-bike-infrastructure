@@ -7,7 +7,7 @@ variable "server_name" {
 variable "server_type" {
   description = "The server type for production"
   type        = string
-  default     = "cx32"
+  default     = "cpx22"
 }
 
 variable "image" {

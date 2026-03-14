@@ -1,5 +1,5 @@
 data "terraform_remote_state" "vpc" {
-  backend = "local"
+  backend = "s3"
 
   config = {
     path = "../vpc/terraform.tfstate"
