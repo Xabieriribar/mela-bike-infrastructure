@@ -1,6 +1,10 @@
 terraform {
   required_version = ">= 1.5.0, < 2.0.0"
 
+  backend "s3" {
+    key = "prod/services/terraform.tfstate"
+  }
+
   required_providers {
     hcloud = {
       source  = "hetznercloud/hcloud"
@@ -8,5 +12,3 @@ terraform {
     }
   }
 }
-
-provider "hcloud" {}

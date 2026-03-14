@@ -1,0 +1,96 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+
+write_files:
+  - path: /opt/mela-bike/docker-compose.yml
+    permissions: "0644"
+    owner: root:root
+    content: |
+      services:
+        traefik:
+          image: traefik:v3.3
+          container_name: traefik
+          restart: unless-stopped
+          command:
+            - --api.dashboard=true
+            - --providers.docker=true
+            - --providers.docker.exposedbydefault=false
+            - --entrypoints.web.address=:80
+            - --entrypoints.websecure.address=:443
+          ports:
+            - "80:80"
+            - "443:443"
+          volumes:
+            - /var/run/docker.sock:/var/run/docker.sock:ro
+          networks:
+            - proxy
+
+        db:
+          image: postgres:16
+          container_name: odoo-db
+          restart: unless-stopped
+          environment:
+            POSTGRES_DB: odoo
+            POSTGRES_USER: odoo
+            POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+          secrets:
+            - postgres_password
+          volumes:
+            - postgres_data:/var/lib/postgresql/data
+          networks:
+            - internal
+
+        odoo:
+          image: odoo:18
+          container_name: odoo
+          restart: unless-stopped
+          depends_on:
+            - db
+          environment:
+            HOST: db
+            PORT: 5432
+            USER: odoo
+            PASSWORD_FILE: /run/secrets/postgres_password
+          secrets:
+            - postgres_password
+          volumes:
+            - odoo_data:/var/lib/odoo
+          labels:
+            - traefik.enable=true
+            - traefik.http.routers.odoo.rule=Host(`${odoo_domain}`)
+            - traefik.http.routers.odoo.entrypoints=websecure
+            - traefik.http.services.odoo.loadbalancer.server.port=8069
+          networks:
+            - proxy
+            - internal
+
+      secrets:
+        postgres_password:
+          file: /opt/mela-bike/secrets/postgres_password.txt
+
+      volumes:
+        postgres_data:
+        odoo_data:
+
+      networks:
+        proxy:
+        internal:
+
+runcmd:
+  - apt-get update
+  - apt-get install -y ca-certificates curl gnupg
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - bash -lc 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo ${UBUNTU_CODENAME:-$VERSION_CODENAME}) stable" > /etc/apt/sources.list.d/docker.list'
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - systemctl enable docker
+  - systemctl start docker
+  - mkdir -p /opt/mela-bike/secrets
+  - chmod 700 /opt/mela-bike/secrets
+  - touch /opt/mela-bike/secrets/postgres_password.txt
+  - chmod 600 /opt/mela-bike/secrets/postgres_password.txt
+
+final_message: "cloud-init bootstrap complete"

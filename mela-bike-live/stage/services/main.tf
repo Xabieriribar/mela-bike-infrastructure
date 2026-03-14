@@ -53,4 +53,7 @@ module "app_server" {
   network_id  = data.terraform_remote_state.vpc.outputs.network_id
   firewall_id = module.firewall.firewall_id
   ssh_keys    = var.ssh_keys
+  user_data = templatefile("${path.module}/cloud-init.yaml.tftpl", {
+    odoo_domain = var.odoo_domain
+})
 }

@@ -31,5 +31,8 @@ variable "ssh_keys" {
 variable "ssh_source_ips" {
   description = "Allowed source IPs for SSH"
   type        = list(string)
-  default     = ["0.0.0.0/0", "::/0"]
+}
+variable "odoo_domain" {
+  description = "Public domain for the Odoo instance"
+  type        = string
 }
