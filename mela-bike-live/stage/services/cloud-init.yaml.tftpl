@@ -19,7 +19,7 @@ write_files:
             - --entrypoints.websecure.address=:443
             - --entrypoints.web.http.redirections.entryPoint.to=websecure
             - --entrypoints.web.http.redirections.entryPoint.scheme=https
-            - --certificatesresolvers.letsencrypt.acme.email=...
+            - --certificatesresolvers.letsencrypt.acme.email=xabieriribarrevuelta@gmail.com
             - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
             - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
             - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
@@ -28,6 +28,7 @@ write_files:
             - "443:443"
           volumes:
             - /var/run/docker.sock:/var/run/docker.sock:ro
+            - /opt/mela-bike/traefik/letsencrypt:/letsencrypt
           security_opt:
             - no-new-privileges:true
           cap_drop:
@@ -84,8 +85,8 @@ write_files:
             - traefik.docker.network=mela-bike-proxy
             - traefik.http.routers.odoo.rule=Host(`${odoo_domain}`)
             - traefik.http.routers.odoo.entrypoints=websecure
-- traefik.http.routers.odoo.tls=true
-- traefik.http.routers.odoo.tls.certresolver=letsencrypt
+            - traefik.http.routers.odoo.tls=true
+            - traefik.http.routers.odoo.tls.certresolver=letsencrypt
             - traefik.http.services.odoo.loadbalancer.server.port=8069
           networks:
             - proxy
