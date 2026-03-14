@@ -33,7 +33,9 @@ write_files:
           environment:
             POSTGRES_DB: odoo
             POSTGRES_USER: odoo
-            POSTGRES_PASSWORD: CHANGE_ME_DB_PASSWORD
+            POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+          secrets:
+            - postgres_password
           volumes:
             - postgres_data:/var/lib/postgresql/data
           networks:
@@ -49,17 +51,23 @@ write_files:
             HOST: db
             PORT: 5432
             USER: odoo
-            PASSWORD: CHANGE_ME_DB_PASSWORD
+            PASSWORD_FILE: /run/secrets/postgres_password
+          secrets:
+            - postgres_password
           volumes:
             - odoo_data:/var/lib/odoo
           labels:
             - traefik.enable=true
-            - traefik.http.routers.odoo.rule=Host(`odoo.example.com`)
+            - traefik.http.routers.odoo.rule=Host(`${odoo_domain}`)
             - traefik.http.routers.odoo.entrypoints=websecure
             - traefik.http.services.odoo.loadbalancer.server.port=8069
           networks:
             - proxy
             - internal
+
+      secrets:
+        postgres_password:
+          file: /opt/mela-bike/secrets/postgres_password.txt
 
       volumes:
         postgres_data:
@@ -80,7 +88,9 @@ runcmd:
   - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   - systemctl enable docker
   - systemctl start docker
-  - mkdir -p /opt/mela-bike
-  - bash -lc 'cd /opt/mela-bike && docker compose up -d'
+  - mkdir -p /opt/mela-bike/secrets
+  - chmod 700 /opt/mela-bike/secrets
+  - touch /opt/mela-bike/secrets/postgres_password.txt
+  - chmod 600 /opt/mela-bike/secrets/postgres_password.txt
 
 final_message: "cloud-init bootstrap complete"
