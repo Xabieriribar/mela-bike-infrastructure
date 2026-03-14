@@ -13,9 +13,13 @@ write_files:
           container_name: traefik
           restart: unless-stopped
           command:
+            - --providers.docker=true
+            - --providers.docker.exposedbydefault=false
+            - --entrypoints.web.address=:80
+            - --entrypoints.websecure.address=:443
             - --entrypoints.web.http.redirections.entryPoint.to=websecure
             - --entrypoints.web.http.redirections.entryPoint.scheme=https
-            - --certificatesresolvers.letsencrypt.acme.email=xabieriribarrevuelta@gmail.com
+            - --certificatesresolvers.letsencrypt.acme.email=...
             - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
             - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
             - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
@@ -79,7 +83,9 @@ write_files:
             - traefik.enable=true
             - traefik.docker.network=mela-bike-proxy
             - traefik.http.routers.odoo.rule=Host(`${odoo_domain}`)
-            - traefik.http.routers.odoo.entrypoints=web
+            - traefik.http.routers.odoo.entrypoints=websecure
+- traefik.http.routers.odoo.tls=true
+- traefik.http.routers.odoo.tls.certresolver=letsencrypt
             - traefik.http.services.odoo.loadbalancer.server.port=8069
           networks:
             - proxy
