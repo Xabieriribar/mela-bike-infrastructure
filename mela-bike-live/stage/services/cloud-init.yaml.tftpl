@@ -186,6 +186,142 @@ write_files:
       [Install]
       WantedBy=multi-user.target
 
+  - path: /usr/local/bin/mela-bike-backup.sh
+    permissions: "0750"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      umask 077
+
+      work_root=/var/backups/mela-bike
+      timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+      hostname_fqdn="$(hostname -f 2>/dev/null || hostname)"
+      staging_dir="$(mktemp -d "$${work_root}/staging.$${timestamp}.XXXXXX")"
+
+      cleanup() {
+        rm -rf "$staging_dir"
+      }
+
+      fail() {
+        echo "ERROR: $*" >&2
+        exit 1
+      }
+
+      trap cleanup EXIT
+
+      [ "$(id -u)" -eq 0 ] || fail "run as root"
+      command -v docker >/dev/null 2>&1 || fail "docker is not installed"
+      command -v restic >/dev/null 2>&1 || fail "restic is not installed"
+      [ -s /opt/mela-bike/secrets/postgres_password.txt ] || fail "postgres password file is missing"
+      [ -s /opt/mela-bike/secrets/backup.env ] || fail "backup.env is missing"
+      [ -s /opt/mela-bike/secrets/restic_repository_password.txt ] || fail "restic repository password file is missing"
+
+      docker inspect odoo >/dev/null 2>&1 || fail "odoo container does not exist"
+      docker inspect odoo-db >/dev/null 2>&1 || fail "odoo-db container does not exist"
+
+      db_name="$(awk -F' = ' '/^db_name = /{print $2; exit}' /opt/mela-bike/odoo/config/odoo.conf || true)"
+      if [ -z "$db_name" ]; then
+        mapfile -t discovered_dbs < <(docker exec odoo-db psql -U odoo -At -c "SELECT datname FROM pg_database WHERE datistemplate = false AND datname <> 'postgres' ORDER BY datname")
+        if [ "$${#discovered_dbs[@]}" -ne 1 ]; then
+          fail "could not determine a single Odoo database name"
+        fi
+        db_name="$${discovered_dbs[0]}"
+      fi
+
+      install -d -m 0700 "$work_root" "$staging_dir/meta" "$staging_dir/postgres" "$staging_dir/config" "$staging_dir/secrets"
+
+      docker exec odoo-db pg_dump -U odoo -Fc "$db_name" > "$staging_dir/postgres/$${db_name}.dump"
+
+      if docker exec odoo sh -lc 'test -d /var/lib/odoo/filestore'; then
+        docker cp odoo:/var/lib/odoo/filestore "$staging_dir/filestore"
+      fi
+
+      install -m 0640 /opt/mela-bike/docker-compose.yml "$staging_dir/config/docker-compose.yml"
+      cp -a /opt/mela-bike/odoo/config "$staging_dir/config/odoo"
+      install -m 0600 /opt/mela-bike/secrets/postgres_password.txt "$staging_dir/secrets/postgres_password.txt"
+
+      if [ -f /opt/mela-bike/traefik/letsencrypt/acme.json ]; then
+        install -m 0600 /opt/mela-bike/traefik/letsencrypt/acme.json "$staging_dir/secrets/acme.json"
+      fi
+
+      if [ -d /opt/mela-bike/traccar/data ]; then
+        cp -a /opt/mela-bike/traccar/data "$staging_dir/traccar-data"
+      fi
+
+      cat > "$staging_dir/meta/manifest.txt" <<EOF
+      timestamp_utc=$timestamp
+      hostname=$hostname_fqdn
+      database_name=$db_name
+      odoo_domain=${odoo_domain}
+      EOF
+
+      docker compose -f /opt/mela-bike/docker-compose.yml ps > "$staging_dir/meta/docker-compose-ps.txt" || true
+
+      if ! restic snapshots >/dev/null 2>&1; then
+        restic init
+      fi
+
+      restic backup "$staging_dir" \
+        --host "$hostname_fqdn" \
+        --tag mela-bike \
+        --tag stage \
+        --tag "$db_name"
+
+      restic forget --prune \
+        --keep-daily "$${RESTIC_KEEP_DAILY:-7}" \
+        --keep-weekly "$${RESTIC_KEEP_WEEKLY:-4}" \
+        --keep-monthly "$${RESTIC_KEEP_MONTHLY:-3}"
+
+      restic snapshots --latest 1 > "$work_root/latest-snapshot.txt"
+
+  - path: /etc/systemd/system/mela-bike-backup.service
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Unit]
+      Description=Mela Bike encrypted off-site backup
+      Wants=network-online.target docker.service
+      After=network-online.target docker.service mela-bike.service
+      Requires=docker.service
+
+      [Service]
+      Type=oneshot
+      EnvironmentFile=/opt/mela-bike/secrets/backup.env
+      ExecCondition=/usr/bin/test -s /opt/mela-bike/secrets/backup.env
+      ExecCondition=/usr/bin/test -s /opt/mela-bike/secrets/restic_repository_password.txt
+      ExecCondition=/usr/bin/test -s /opt/mela-bike/secrets/postgres_password.txt
+      ExecStart=/usr/local/bin/mela-bike-backup.sh
+      User=root
+
+  - path: /etc/systemd/system/mela-bike-backup.timer
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Unit]
+      Description=Daily Mela Bike backup timer
+
+      [Timer]
+      OnCalendar=*-*-* 03:17:00
+      RandomizedDelaySec=20m
+      Persistent=true
+
+      [Install]
+      WantedBy=timers.target
+
+  - path: /opt/mela-bike/backup.env.example
+    permissions: "0640"
+    owner: root:root
+    content: |
+      RESTIC_REPOSITORY=s3:https://fsn1.your-objectstorage.com/odoo-infra-production-state/mela-bike-backups/stage
+      AWS_ACCESS_KEY_ID=replace-me
+      AWS_SECRET_ACCESS_KEY=replace-me
+      AWS_DEFAULT_REGION=eu-central
+      RESTIC_PASSWORD_FILE=/opt/mela-bike/secrets/restic_repository_password.txt
+      RESTIC_KEEP_DAILY=7
+      RESTIC_KEEP_WEEKLY=4
+      RESTIC_KEEP_MONTHLY=3
+
   - path: /opt/mela-bike/README.txt
     permissions: "0644"
     owner: root:root
@@ -197,10 +333,14 @@ write_files:
       4. Start the stack with: sudo systemctl start mela-bike
       5. The stack will start automatically on reboot after the password file exists.
       6. Do not run docker compose up directly; the start script injects the PostgreSQL secret for Compose.
+      7. Create /opt/mela-bike/secrets/backup.env from /opt/mela-bike/backup.env.example
+      8. Put the restic repository password into /opt/mela-bike/secrets/restic_repository_password.txt
+      9. Run the first backup with: sudo systemctl start mela-bike-backup.service
+      10. Check backup status with: sudo systemctl status mela-bike-backup.service && sudo restic snapshots
 
 runcmd:
   - apt-get update
-  - apt-get install -y ca-certificates curl gnupg
+  - apt-get install -y ca-certificates curl gnupg restic
   - install -m 0755 -d /etc/apt/keyrings
   - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
   - chmod a+r /etc/apt/keyrings/docker.asc
@@ -212,6 +352,7 @@ runcmd:
 
   - install -d -m 0755 /opt/mela-bike
   - install -d -m 0700 /opt/mela-bike/secrets
+  - install -d -m 0700 /var/backups/mela-bike
   - install -d -m 0755 /opt/mela-bike/odoo
   - install -d -m 0755 /opt/mela-bike/odoo/config
   - install -d -m 0755 /opt/mela-bike/odoo/addons-local
@@ -228,4 +369,5 @@ runcmd:
   - chmod 600 /opt/mela-bike/traefik/letsencrypt/acme.json
   - systemctl daemon-reload
   - systemctl enable mela-bike.service
+  - systemctl enable mela-bike-backup.timer
 final_message: "Bootstrap complete. Add the DB password to /opt/mela-bike/secrets/postgres_password.txt, then run sudo systemctl start mela-bike"
