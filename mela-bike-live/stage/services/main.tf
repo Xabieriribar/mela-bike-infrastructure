@@ -48,7 +48,7 @@ locals {
     {
       protocol   = "tcp"
       port       = "8082"
-      source_ips = ["0.0.0.0/0", "::/0"]
+      source_ips = var.ssh_source_ips
     }
   ]
 }
