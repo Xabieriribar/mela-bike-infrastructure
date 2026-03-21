@@ -114,10 +114,12 @@ POSTGRES_PASSWORD="$(< /opt/mela-bike/secrets/postgres_password.txt)" docker com
 
 ```bash
 filestore_src="$(find /var/tmp/mela-bike-restore -type d -name filestore | head -n1)"
-docker exec odoo rm -rf /var/lib/odoo/filestore
-docker exec odoo mkdir -p /var/lib/odoo/filestore
-docker cp "$filestore_src"/. odoo:/var/lib/odoo/filestore/
-docker exec -u 0 odoo chown -R odoo:odoo /var/lib/odoo/filestore
+odoo_volume_path="$(docker inspect odoo --format '{{range .Mounts}}{{if eq .Destination "/var/lib/odoo"}}{{.Source}}{{end}}{{end}}')"
+rm -rf "$odoo_volume_path/filestore"
+mkdir -p "$odoo_volume_path/filestore"
+cp -a "$filestore_src"/. "$odoo_volume_path/filestore"/
+chown -R 100:101 "$odoo_volume_path/filestore"
+docker restart odoo
 ```
 
 11. Restore Traccar data if needed:
@@ -141,6 +143,7 @@ systemctl restart mela-bike
 - Odoo login works
 - attachments are present
 - `restic snapshots` still lists the repository
+- if Odoo drops all capabilities, restore filestore ownership on the host volume, not inside the container
 
 You can verify the login page without exposing the temporary recovery host publicly:
 
