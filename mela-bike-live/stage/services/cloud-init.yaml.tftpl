@@ -8,12 +8,37 @@ write_files:
     owner: root:root
     content: |
       services:
+        dockerproxy:
+          image: tecnativa/docker-socket-proxy:latest
+          container_name: dockerproxy
+          restart: unless-stopped
+          environment:
+            CONTAINERS: 1
+            EVENTS: 1
+            INFO: 1
+            NETWORKS: 1
+            PING: 1
+            VERSION: 1
+            POST: 0
+          volumes:
+            - /var/run/docker.sock:/var/run/docker.sock:ro
+          security_opt:
+            - no-new-privileges:true
+          cap_drop:
+            - ALL
+          networks:
+            - socketproxy
+
         traefik:
           image: traefik:v3.6
           container_name: traefik
           restart: unless-stopped
+          depends_on:
+            dockerproxy:
+              condition: service_started
           command:
             - --providers.docker=true
+            - --providers.docker.endpoint=tcp://dockerproxy:2375
             - --providers.docker.exposedbydefault=false
             - --entrypoints.web.address=:80
             - --entrypoints.websecure.address=:443
@@ -27,7 +52,6 @@ write_files:
             - "80:80"
             - "443:443"
           volumes:
-            - /var/run/docker.sock:/var/run/docker.sock:ro
             - /opt/mela-bike/traefik/letsencrypt:/letsencrypt
           security_opt:
             - no-new-privileges:true
@@ -37,6 +61,7 @@ write_files:
             - NET_BIND_SERVICE
           networks:
             - proxy
+            - socketproxy
 
         db:
           image: postgres:16
@@ -99,6 +124,7 @@ write_files:
             - traefik.http.middlewares.odoo-security.headers.browserXssFilter=true
             - traefik.http.middlewares.odoo-security.headers.referrerPolicy=no-referrer
             - traefik.http.middlewares.odoo-security.headers.permissionsPolicy=accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()
+            - traefik.http.middlewares.odoo-security.headers.customResponseHeaders.Server=web
 %{ endif ~}
           networks:
             - proxy
@@ -109,9 +135,7 @@ write_files:
           container_name: traccar
           restart: unless-stopped
           ports:
-            - "8082:8082"
-            - "5000-5150:5000-5150/tcp"
-            - "5000-5150:5000-5150/udp"
+            - "127.0.0.1:8082:8082"
           volumes:
             - /opt/mela-bike/traccar/data:/opt/traccar/data
             - /opt/mela-bike/traccar/logs:/opt/traccar/logs
@@ -133,6 +157,9 @@ write_files:
           name: mela-bike-proxy
         internal:
           name: mela-bike-internal
+          internal: true
+        socketproxy:
+          name: mela-bike-socketproxy
           internal: true
 
   - path: /opt/mela-bike/odoo/config/odoo.conf
@@ -367,6 +394,7 @@ write_files:
       9. Use dedicated backup-only object storage credentials in backup.env, not the Terraform state credentials.
       10. Run the first backup with: sudo systemctl start mela-bike-backup.service
       11. Check backup status with: sudo systemctl status mela-bike-backup.service && sudo restic snapshots
+      12. Traccar web is bound to 127.0.0.1:8082 only. Use an SSH tunnel for access.
 
 runcmd:
   - apt-get update
