@@ -117,7 +117,7 @@ filestore_src="$(find /var/tmp/mela-bike-restore -type d -name filestore | head 
 docker exec odoo rm -rf /var/lib/odoo/filestore
 docker exec odoo mkdir -p /var/lib/odoo/filestore
 docker cp "$filestore_src"/. odoo:/var/lib/odoo/filestore/
-docker exec odoo chown -R odoo:odoo /var/lib/odoo/filestore
+docker exec -u 0 odoo chown -R odoo:odoo /var/lib/odoo/filestore
 ```
 
 11. Restore Traccar data if needed:
@@ -141,6 +141,12 @@ systemctl restart mela-bike
 - Odoo login works
 - attachments are present
 - `restic snapshots` still lists the repository
+
+You can verify the login page without exposing the temporary recovery host publicly:
+
+```bash
+docker exec odoo python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8069/web/login').status)"
+```
 
 ## Notes
 
