@@ -36,3 +36,9 @@ variable "odoo_domain" {
   description = "Public domain for the Odoo instance"
   type        = string
 }
+
+variable "odoo_db_name" {
+  description = "Database name Odoo should use by default"
+  type        = string
+  default     = ""
+}

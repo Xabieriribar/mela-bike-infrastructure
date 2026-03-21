@@ -9,7 +9,7 @@ write_files:
     content: |
       services:
         traefik:
-          image: traefik:v3.3
+          image: traefik:v3.6
           container_name: traefik
           restart: unless-stopped
           command:
@@ -80,6 +80,7 @@ write_files:
             - /opt/mela-bike/odoo:/mnt/odoo:ro
           security_opt:
             - no-new-privileges:true
+%{ if odoo_domain != "" ~}
           labels:
             - traefik.enable=true
             - traefik.docker.network=mela-bike-proxy
@@ -88,6 +89,7 @@ write_files:
             - traefik.http.routers.odoo.tls=true
             - traefik.http.routers.odoo.tls.certresolver=letsencrypt
             - traefik.http.services.odoo.loadbalancer.server.port=8069
+%{ endif ~}
           networks:
             - proxy
             - internal
@@ -108,7 +110,7 @@ write_files:
 
       secrets:
         postgres_password:
-          file: /opt/mela-bike/secrets/postgres_password.txt
+          environment: POSTGRES_PASSWORD
 
       volumes:
         postgres_data:
@@ -130,6 +132,9 @@ write_files:
       list_db = False
       data_dir = /var/lib/odoo
       addons_path = /mnt/odoo/addons-local,/mnt/odoo/addons-enterprise,/usr/lib/python3/dist-packages/odoo/addons
+%{ if odoo_db_name != "" ~}
+      db_name = ${odoo_db_name}
+%{ endif ~}
 
   - path: /opt/mela-bike/start-stack.sh
     permissions: "0750"
@@ -137,14 +142,49 @@ write_files:
     content: |
       #!/usr/bin/env bash
       set -euo pipefail
+      umask 077
 
-      if [ ! -s /opt/mela-bike/secrets/postgres_password.txt ]; then
-        echo "ERROR: /opt/mela-bike/secrets/postgres_password.txt is missing or empty."
+      compose_file=/opt/mela-bike/docker-compose.yml
+      secret_file=/opt/mela-bike/secrets/postgres_password.txt
+
+      if [ "$(id -u)" -ne 0 ]; then
+        echo "ERROR: run this script with sudo."
         exit 1
       fi
 
-      cd /opt/mela-bike
-      docker compose up -d
+      if [ ! -f "$compose_file" ]; then
+        echo "ERROR: $compose_file is missing."
+        exit 1
+      fi
+
+      if [ ! -s "$secret_file" ]; then
+        echo "ERROR: $secret_file is missing or empty."
+        exit 1
+      fi
+
+      POSTGRES_PASSWORD="$(< "$secret_file")" /usr/bin/docker compose -f "$compose_file" up -d --remove-orphans
+
+  - path: /etc/systemd/system/mela-bike.service
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Unit]
+      Description=Mela Bike application stack
+      Wants=network-online.target
+      After=network-online.target docker.service
+      Requires=docker.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      WorkingDirectory=/opt/mela-bike
+      ExecCondition=/usr/bin/test -s /opt/mela-bike/secrets/postgres_password.txt
+      ExecStart=/opt/mela-bike/start-stack.sh
+      ExecStop=/usr/bin/docker compose -f /opt/mela-bike/docker-compose.yml down
+      TimeoutStartSec=0
+
+      [Install]
+      WantedBy=multi-user.target
 
   - path: /opt/mela-bike/README.txt
     permissions: "0644"
@@ -154,7 +194,9 @@ write_files:
       1. Put the PostgreSQL password into /opt/mela-bike/secrets/postgres_password.txt
       2. Put custom Odoo modules in /opt/mela-bike/odoo/addons-local
       3. Put Odoo Enterprise modules in /opt/mela-bike/odoo/addons-enterprise
-      4. Start the stack with: /opt/mela-bike/start-stack.sh
+      4. Start the stack with: sudo systemctl start mela-bike
+      5. The stack will start automatically on reboot after the password file exists.
+      6. Do not run docker compose up directly; the start script injects the PostgreSQL secret for Compose.
 
 runcmd:
   - apt-get update
@@ -162,7 +204,7 @@ runcmd:
   - install -m 0755 -d /etc/apt/keyrings
   - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
   - chmod a+r /etc/apt/keyrings/docker.asc
-  - bash -lc 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo ${UBUNTU_CODENAME:-$VERSION_CODENAME}) stable" > /etc/apt/sources.list.d/docker.list'
+  - bash -lc 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $${UBUNTU_CODENAME:-$VERSION_CODENAME}) stable" > /etc/apt/sources.list.d/docker.list'
   - apt-get update
   - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   - systemctl enable docker
@@ -184,5 +226,7 @@ runcmd:
   - install -d -m 0700 /opt/mela-bike/traefik/letsencrypt
   - touch /opt/mela-bike/traefik/letsencrypt/acme.json
   - chmod 600 /opt/mela-bike/traefik/letsencrypt/acme.json
+  - systemctl daemon-reload
+  - systemctl enable mela-bike.service
 
-final_message: "Bootstrap complete. Add the DB password to /opt/mela-bike/secrets/postgres_password.txt, then run /opt/mela-bike/start-stack.sh"
+final_message: "Bootstrap complete. Add the DB password to /opt/mela-bike/secrets/postgres_password.txt, then run sudo systemctl start mela-bike"

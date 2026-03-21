@@ -71,6 +71,7 @@ module "app_server" {
   firewall_id = module.firewall.firewall_id
   ssh_keys    = var.ssh_keys
   user_data = templatefile("${path.module}/cloud-init.yaml.tftpl", {
-    odoo_domain = var.odoo_domain
-})
+    odoo_domain  = var.odoo_domain
+    odoo_db_name = var.odoo_db_name
+  })
 }
