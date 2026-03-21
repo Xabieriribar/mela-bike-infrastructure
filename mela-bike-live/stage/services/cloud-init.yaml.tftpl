@@ -40,10 +40,9 @@ write_files:
             - --providers.docker=true
             - --providers.docker.endpoint=tcp://dockerproxy:2375
             - --providers.docker.exposedbydefault=false
+            - --providers.file.filename=/etc/traefik/dynamic.yaml
             - --entrypoints.web.address=:80
             - --entrypoints.websecure.address=:443
-            - --entrypoints.web.http.redirections.entryPoint.to=websecure
-            - --entrypoints.web.http.redirections.entryPoint.scheme=https
             - --certificatesresolvers.letsencrypt.acme.email=xabieriribarrevuelta@gmail.com
             - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
             - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
@@ -53,6 +52,7 @@ write_files:
             - "443:443"
           volumes:
             - /opt/mela-bike/traefik/letsencrypt:/letsencrypt
+            - /opt/mela-bike/traefik/dynamic.yaml:/etc/traefik/dynamic.yaml:ro
           security_opt:
             - no-new-privileges:true
           cap_drop:
@@ -111,6 +111,11 @@ write_files:
           labels:
             - traefik.enable=true
             - traefik.docker.network=mela-bike-proxy
+            - traefik.http.routers.odoo-web.rule=Host(`${odoo_domain}`)
+            - traefik.http.routers.odoo-web.entrypoints=web
+            - traefik.http.routers.odoo-web.middlewares=odoo-redirect
+            - traefik.http.routers.odoo-web.service=noop@internal
+            - traefik.http.middlewares.odoo-redirect.redirectscheme.scheme=https
             - traefik.http.routers.odoo.rule=Host(`${odoo_domain}`)
             - traefik.http.routers.odoo.entrypoints=websecure
             - traefik.http.routers.odoo.tls=true
@@ -176,6 +181,20 @@ write_files:
       dbfilter = ^${odoo_db_name}$
 %{ endif ~}
 
+  - path: /opt/mela-bike/traefik/dynamic.yaml
+    permissions: "0644"
+    owner: root:root
+    content: |
+      tls:
+        options:
+          default:
+            minVersion: VersionTLS12
+            sniStrict: true
+            cipherSuites:
+              - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+              - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+              - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+
   - path: /opt/mela-bike/start-stack.sh
     permissions: "0750"
     owner: root:root
@@ -186,6 +205,8 @@ write_files:
 
       compose_file=/opt/mela-bike/docker-compose.yml
       secret_file=/opt/mela-bike/secrets/postgres_password.txt
+      odoo_config_file=/opt/mela-bike/odoo/config/odoo.conf
+      odoo_admin_secret_file=/opt/mela-bike/secrets/odoo_admin_passwd.txt
 
       if [ "$(id -u)" -ne 0 ]; then
         echo "ERROR: run this script with sudo."
@@ -201,6 +222,30 @@ write_files:
         echo "ERROR: $secret_file is missing or empty."
         exit 1
       fi
+
+      if [ ! -f "$odoo_config_file" ]; then
+        echo "ERROR: $odoo_config_file is missing."
+        exit 1
+      fi
+
+      if [ ! -s "$odoo_admin_secret_file" ]; then
+        openssl rand -base64 48 | tr -d '\n' > "$odoo_admin_secret_file"
+        chmod 600 "$odoo_admin_secret_file"
+      fi
+
+      tmp_config="$(mktemp)"
+      awk '
+        $0 == "# BEGIN MELA-BIKE MANAGED SECRETS" { skip = 1; next }
+        $0 == "# END MELA-BIKE MANAGED SECRETS" { skip = 0; next }
+        !skip { print }
+      ' "$odoo_config_file" > "$tmp_config"
+      install -m 0644 "$tmp_config" "$odoo_config_file"
+      rm -f "$tmp_config"
+      {
+        printf '\n# BEGIN MELA-BIKE MANAGED SECRETS\n'
+        printf 'admin_passwd = %s\n' "$(tr -d '\r\n' < "$odoo_admin_secret_file")"
+        printf '# END MELA-BIKE MANAGED SECRETS\n'
+      } >> "$odoo_config_file"
 
       POSTGRES_PASSWORD="$(< "$secret_file")" /usr/bin/docker compose -f "$compose_file" up -d --remove-orphans
 
@@ -240,6 +285,9 @@ write_files:
       MaxAuthTries 3
       ClientAliveInterval 300
       ClientAliveCountMax 2
+      KexAlgorithms sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group14-sha256
+      Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes128-ctr
+      MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com
 
   - path: /usr/local/bin/mela-bike-backup.sh
     permissions: "0750"
@@ -295,6 +343,9 @@ write_files:
       install -m 0640 /opt/mela-bike/docker-compose.yml "$staging_dir/config/docker-compose.yml"
       cp -a /opt/mela-bike/odoo/config "$staging_dir/config/odoo"
       install -m 0600 /opt/mela-bike/secrets/postgres_password.txt "$staging_dir/secrets/postgres_password.txt"
+      if [ -f /opt/mela-bike/secrets/odoo_admin_passwd.txt ]; then
+        install -m 0600 /opt/mela-bike/secrets/odoo_admin_passwd.txt "$staging_dir/secrets/odoo_admin_passwd.txt"
+      fi
 
       if [ -f /opt/mela-bike/traefik/letsencrypt/acme.json ]; then
         install -m 0600 /opt/mela-bike/traefik/letsencrypt/acme.json "$staging_dir/secrets/acme.json"

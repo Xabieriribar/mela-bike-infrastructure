@@ -8,6 +8,7 @@ This stack uses encrypted off-site backups with `restic` stored in S3-compatible
 - Odoo filestore
 - Odoo configuration
 - PostgreSQL connection secret
+- Odoo database manager secret
 - Traefik ACME state
 - Traccar data directory
 - A small manifest with timestamp, hostname, and database name
@@ -18,6 +19,7 @@ On the stage server:
 
 - Backup environment file: `/opt/mela-bike/secrets/backup.env`
 - Restic password file: `/opt/mela-bike/secrets/restic_repository_password.txt`
+- Odoo database manager password file: `/opt/mela-bike/secrets/odoo_admin_passwd.txt`
 - Backup script: `/usr/local/bin/mela-bike-backup.sh`
 - Backup timer: `mela-bike-backup.timer`
 
@@ -69,10 +71,11 @@ These steps assume the original server is gone and you are restoring onto a fres
 
 2. Install Docker, the compose file, Odoo config, and the backup tooling.
 
-3. Recreate these two files on the replacement server:
+3. Recreate these files on the replacement server:
 
 - `/opt/mela-bike/secrets/postgres_password.txt`
 - `/opt/mela-bike/secrets/restic_repository_password.txt`
+- `/opt/mela-bike/secrets/odoo_admin_passwd.txt` if you want to preserve the same Odoo database manager password
 
 4. Recreate `/opt/mela-bike/secrets/backup.env` with the backup repository and object storage credentials.
 
@@ -142,6 +145,7 @@ systemctl restart mela-bike
 
 - Odoo login works
 - attachments are present
+- `/opt/mela-bike/secrets/odoo_admin_passwd.txt` exists after startup
 - `restic snapshots` still lists the repository
 - if Odoo drops all capabilities, restore filestore ownership on the host volume, not inside the container
 
@@ -156,3 +160,4 @@ docker exec odoo python3 -c "import urllib.request; print(urllib.request.urlopen
 - Backups are encrypted. Without the restic repository password, restores are impossible.
 - The current setup stores backups under a separate prefix in the existing object storage bucket.
 - A future hardening step is to move backups to a dedicated backup-only bucket with dedicated credentials.
+- If `/opt/mela-bike/secrets/odoo_admin_passwd.txt` is absent, `start-stack.sh` now generates a fresh strong Odoo database manager password automatically.
