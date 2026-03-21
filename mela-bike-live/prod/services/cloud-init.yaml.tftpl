@@ -90,7 +90,15 @@ write_files:
             - traefik.http.routers.odoo.entrypoints=websecure
             - traefik.http.routers.odoo.tls=true
             - traefik.http.routers.odoo.tls.certresolver=letsencrypt
+            - traefik.http.routers.odoo.middlewares=odoo-security
             - traefik.http.services.odoo.loadbalancer.server.port=8069
+            - traefik.http.middlewares.odoo-security.headers.stsSeconds=31536000
+            - traefik.http.middlewares.odoo-security.headers.stsIncludeSubdomains=true
+            - traefik.http.middlewares.odoo-security.headers.stsPreload=true
+            - traefik.http.middlewares.odoo-security.headers.contentTypeNosniff=true
+            - traefik.http.middlewares.odoo-security.headers.browserXssFilter=true
+            - traefik.http.middlewares.odoo-security.headers.referrerPolicy=no-referrer
+            - traefik.http.middlewares.odoo-security.headers.permissionsPolicy=accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()
 %{ endif ~}
           networks:
             - proxy
@@ -190,6 +198,21 @@ write_files:
 
       [Install]
       WantedBy=multi-user.target
+
+  - path: /etc/ssh/sshd_config.d/99-mela-bike-hardening.conf
+    permissions: "0644"
+    owner: root:root
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin prohibit-password
+      PermitEmptyPasswords no
+      X11Forwarding no
+      AllowTcpForwarding no
+      AllowAgentForwarding no
+      MaxAuthTries 3
+      ClientAliveInterval 300
+      ClientAliveCountMax 2
 
   - path: /usr/local/bin/mela-bike-backup.sh
     permissions: "0750"
@@ -375,6 +398,8 @@ runcmd:
   - touch /opt/mela-bike/traefik/letsencrypt/acme.json
   - chmod 600 /opt/mela-bike/traefik/letsencrypt/acme.json
   - systemctl daemon-reload
+  - sshd -t
+  - systemctl restart ssh
   - systemctl enable mela-bike.service
   - systemctl enable mela-bike-backup.timer
 
