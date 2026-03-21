@@ -57,8 +57,6 @@ write_files:
             retries: 10
           security_opt:
             - no-new-privileges:true
-          cap_drop:
-            - ALL
           networks:
             - internal
 
