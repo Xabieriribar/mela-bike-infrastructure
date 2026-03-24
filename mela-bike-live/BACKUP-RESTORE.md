@@ -107,13 +107,23 @@ dump_path="$(find /var/tmp/mela-bike-restore -path '*/postgres/*.dump' | head -n
 cat "$dump_path" | docker exec -i odoo-db pg_restore -U odoo -d db_mela --clean --if-exists --no-owner
 ```
 
-9. Create the Odoo container so the named volume exists:
+9. Restore the Enterprise addon tree if it exists in the backup:
+
+```bash
+enterprise_src="$(find /var/tmp/mela-bike-restore -type d -path '*/config/addons-enterprise' | head -n1)"
+if [ -n "$enterprise_src" ]; then
+  rm -rf /opt/mela-bike/odoo/addons-enterprise
+  cp -a "$enterprise_src" /opt/mela-bike/odoo/addons-enterprise
+fi
+```
+
+10. Create the Odoo container so the named volume exists:
 
 ```bash
 POSTGRES_PASSWORD="$(< /opt/mela-bike/secrets/postgres_password.txt)" docker compose -f /opt/mela-bike/docker-compose.yml up -d odoo
 ```
 
-10. Restore the Odoo filestore:
+11. Restore the Odoo filestore:
 
 ```bash
 filestore_src="$(find /var/tmp/mela-bike-restore -type d -name filestore | head -n1)"
@@ -125,7 +135,7 @@ chown -R 100:101 "$odoo_volume_path/filestore"
 docker restart odoo
 ```
 
-11. Restore Traccar data if needed:
+12. Restore Traccar data if needed:
 
 ```bash
 traccar_src="$(find /var/tmp/mela-bike-restore -type d -path '*/traccar-data' | head -n1)"
@@ -135,7 +145,7 @@ if [ -n "$traccar_src" ]; then
 fi
 ```
 
-12. Restart the full stack:
+13. Restart the full stack:
 
 ```bash
 systemctl restart mela-bike

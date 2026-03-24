@@ -347,6 +347,9 @@ write_files:
 
       install -m 0640 /opt/mela-bike/docker-compose.yml "$staging_dir/config/docker-compose.yml"
       cp -a /opt/mela-bike/odoo/config "$staging_dir/config/odoo"
+      if [ -d /opt/mela-bike/odoo/addons-enterprise ]; then
+        cp -a /opt/mela-bike/odoo/addons-enterprise "$staging_dir/config/addons-enterprise"
+      fi
       install -m 0600 /opt/mela-bike/secrets/postgres_password.txt "$staging_dir/secrets/postgres_password.txt"
       if [ -f /opt/mela-bike/secrets/odoo_admin_passwd.txt ]; then
         install -m 0600 /opt/mela-bike/secrets/odoo_admin_passwd.txt "$staging_dir/secrets/odoo_admin_passwd.txt"
