@@ -47,6 +47,7 @@ Main components:
 Infrastructure code lives in:
 
 - [README.md](/tmp/melabike/live/mela-bike-live/README.md)
+- [OPERATIONS.md](/tmp/melabike/live/mela-bike-live/OPERATIONS.md)
 - [BACKUP-RESTORE.md](/tmp/melabike/live/mela-bike-live/BACKUP-RESTORE.md)
 - [stage/vpc](/tmp/melabike/live/mela-bike-live/stage/vpc)
 - [stage/services](/tmp/melabike/live/mela-bike-live/stage/services)
@@ -382,4 +383,3 @@ The right next step is simple:
 - let your brother start configuring the business in Odoo
 - keep backups running
 - make fewer infrastructure changes, not more
-
