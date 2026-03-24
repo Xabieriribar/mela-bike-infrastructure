@@ -207,6 +207,7 @@ write_files:
       secret_file=/opt/mela-bike/secrets/postgres_password.txt
       odoo_config_file=/opt/mela-bike/odoo/config/odoo.conf
       odoo_admin_secret_file=/opt/mela-bike/secrets/odoo_admin_passwd.txt
+      enterprise_marker=/opt/mela-bike/odoo/addons-enterprise/web_enterprise/__manifest__.py
 
       if [ "$(id -u)" -ne 0 ]; then
         echo "ERROR: run this script with sudo."
@@ -226,6 +227,10 @@ write_files:
       if [ ! -f "$odoo_config_file" ]; then
         echo "ERROR: $odoo_config_file is missing."
         exit 1
+      fi
+
+      if [ ! -f "$enterprise_marker" ]; then
+        echo "WARN: Enterprise code not found at $enterprise_marker. Odoo will run in Community mode and the subscription activation UI will be unavailable." >&2
       fi
 
       if [ ! -s "$odoo_admin_secret_file" ]; then
@@ -436,7 +441,8 @@ write_files:
       After first boot:
       1. Put the PostgreSQL password into /opt/mela-bike/secrets/postgres_password.txt
       2. Put custom Odoo modules in /opt/mela-bike/odoo/addons-local
-      3. Put Odoo Enterprise modules in /opt/mela-bike/odoo/addons-enterprise
+      3. Put Odoo Enterprise 18.0 modules in /opt/mela-bike/odoo/addons-enterprise
+         If this directory does not contain web_enterprise, Odoo will run in Community mode and no subscription activation UI will appear.
       4. Start the stack with: sudo systemctl start mela-bike
       5. The stack will start automatically on reboot after the password file exists.
       6. Do not run docker compose up directly; the start script injects the PostgreSQL secret for Compose.
