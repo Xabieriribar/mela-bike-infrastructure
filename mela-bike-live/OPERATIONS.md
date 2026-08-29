@@ -1,121 +1,58 @@
-# Mela Bike Operations Quick Reference
+# Operations Reference
 
-Last verified: March 24, 2026
+This public document describes the operating model without exposing live hosts, endpoints or access details.
 
-## Current Live Environment
+## Services
 
-- Environment: `stage`
-- URL: `https://staging.mela.bike`
-- Hostname: `mela-bike-stage`
-- Odoo DB: `db_mela`
-- Odoo edition: `Enterprise`
+- mela-bike.service
+- odoo
+- odoo-db
+- traefik
+- traccar
+- dockerproxy
+- mela-bike-backup.timer
 
-## What Is Running
+## Main paths
 
-- `mela-bike.service`
-- `odoo` container
-- `odoo-db` container
-- `traefik` container
-- `traccar` container
-- `dockerproxy` container
-- `mela-bike-backup.timer`
+- Stack root: /opt/mela-bike
+- Compose file: /opt/mela-bike/docker-compose.yml
+- Odoo config: /opt/mela-bike/odoo/config/odoo.conf
+- Custom addons: /opt/mela-bike/odoo/addons-local
+- Secrets directory: /opt/mela-bike/secrets
+- Backup script: /usr/local/bin/mela-bike-backup.sh
 
-## Important Paths
+## Routine checks
 
-- Stack root: `/opt/mela-bike`
-- Compose file: `/opt/mela-bike/docker-compose.yml`
-- Odoo config: `/opt/mela-bike/odoo/config/odoo.conf`
-- Custom addons: `/opt/mela-bike/odoo/addons-local`
-- Enterprise addons: `/opt/mela-bike/odoo/addons-enterprise`
-- Secrets: `/opt/mela-bike/secrets`
-- Backup script: `/usr/local/bin/mela-bike-backup.sh`
+Replace the placeholders with values from the private operations record.
 
-## Backups
+~~~bash
+ssh <user>@<server-ip> 'systemctl status mela-bike --no-pager'
+ssh <user>@<server-ip> 'docker compose -f /opt/mela-bike/docker-compose.yml ps'
+ssh <user>@<server-ip> 'docker logs odoo --tail 100'
+ssh <user>@<server-ip> 'systemctl status mela-bike-backup.service --no-pager'
+~~~
 
-- Tool: `restic`
-- Storage: S3-compatible object storage
-- Schedule: daily
-- Current timer target: around `03:25 UTC`
-- Retention:
-  - `7` daily
-  - `4` weekly
-  - `3` monthly
+## Safe restart
 
-Backups include:
+~~~bash
+ssh <user>@<server-ip> 'systemctl restart mela-bike'
+~~~
 
-- PostgreSQL dump
-- Odoo filestore
-- Odoo config
-- Enterprise addon tree
-- key runtime secrets
-- Traefik ACME state
-- Traccar data
+## Troubleshooting order
 
-## Basic Checks
+1. Check the systemd service.
+2. Check Docker Compose state.
+3. Inspect Odoo logs.
+4. Inspect PostgreSQL logs.
+5. Check the most recent backup job.
+6. Confirm that required runtime secret files exist and have restrictive permissions.
 
-Check the stack:
+## Operational cautions
 
-```bash
-ssh root@91.98.114.63 'systemctl status mela-bike --no-pager'
-```
+- Review Terraform plans before applying them.
+- Do not edit runtime secrets through Git.
+- Do not treat Docker volumes as backups.
+- Test restoration procedures periodically.
+- Keep live endpoints, host addresses and credentials in a private password manager or operations record.
 
-Check containers:
-
-```bash
-ssh root@91.98.114.63 'docker compose -f /opt/mela-bike/docker-compose.yml ps'
-```
-
-Check Odoo logs:
-
-```bash
-ssh root@91.98.114.63 'docker logs odoo --tail 100'
-```
-
-Check backup status:
-
-```bash
-ssh root@91.98.114.63 'systemctl status mela-bike-backup.service --no-pager'
-```
-
-List snapshots:
-
-```bash
-ssh root@91.98.114.63 'set -a; . /opt/mela-bike/secrets/backup.env; set +a; restic snapshots'
-```
-
-## Safe Restart
-
-```bash
-ssh root@91.98.114.63 'systemctl restart mela-bike'
-```
-
-## If Something Breaks
-
-Check in this order:
-
-1. `systemctl status mela-bike`
-2. `docker compose ps`
-3. `docker logs odoo`
-4. `docker logs odoo-db`
-5. `systemctl status mela-bike-backup.service`
-
-If the server itself is lost:
-
-- rebuild from Terraform
-- restore secrets
-- restore the latest restic snapshot
-- use [BACKUP-RESTORE.md](/tmp/melabike/live/mela-bike-live/BACKUP-RESTORE.md)
-
-## Do Not Touch Casually
-
-- `stage/services` Terraform with a full apply
-- files in `/opt/mela-bike/secrets`
-- `/opt/mela-bike/odoo/addons-enterprise`
-- backup credentials
-- the restic password
-
-## Related Documents
-
-- [README.md](/tmp/melabike/live/mela-bike-live/README.md)
-- [BACKUP-RESTORE.md](/tmp/melabike/live/mela-bike-live/BACKUP-RESTORE.md)
-
+See [BACKUP-RESTORE.md](BACKUP-RESTORE.md) for the recovery model.
