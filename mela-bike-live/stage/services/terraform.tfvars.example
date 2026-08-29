@@ -1,0 +1,4 @@
+ssh_keys       = ["your-hetzner-ssh-key-name"]
+ssh_source_ips = ["203.0.113.10/32"]
+odoo_domain    = "staging.example.com"
+odoo_db_name   = "odoo"
